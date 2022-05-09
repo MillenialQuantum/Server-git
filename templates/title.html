@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Новый пост</title>
+    <link
+            href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css"
+            rel="stylesheet"
+            integrity="sha384-1BmE4kWBq78iYhFldvKuhfTAU6auU8tT94WrHftjDbrCEXSU1oBoqyl2QvZ6jIW3"
+            crossorigin="anonymous"
+    />
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.4.1/css/bootstrap.min.css">
+
+    <script src="../static/js/jquery1"></script>
+
+    <style>
+        .btn-file {
+            position: relative;
+            overflow: hidden;
+        }
+         
+        .btn-file input[type=file] {
+            position: absolute;
+            top: 0;
+            right: 0;
+            min-width: 100%;
+            min-height: 100%;
+            font-size: 100px;
+            text-align: right;
+            filter: alpha(opacity=0);
+            opacity: 0;
+            outline: none;
+            background: white;
+            cursor: inherit;
+            display: block;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+                     
+        <div class="header">
+                         
+            <nav
+                class="border-bottom flex-wrap mb-4 py-3 d-flex justify-content-center"
+            >
+                <a
+                    href="/"
+                    class="text-dark text-decoration-none mb-3 mb-md-0 d-flex align-items-center me-md-auto"
+                >
+                    <span class="fs-4">Spaces</span>
+                </a>
+
+                <ul class="nav nav-pills">
+                    <li class="nav-item">
+                        <a href="/" class="nav-link">Домой</a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="/logout" class="nav-link active">Выйти</a>
+                    </li>
+                </ul>
+                                         
+            </nav>
+                     
+        </div>
+    </div>
+    <div class="bg-light rounded-3 mb-4 p-5">
+        <div class="container-fluid py-5">
+            <h1>Напиши свой текст!</h1>
+        </div>
+    </div>
+    <section>
+        <form class="bg-light rounded-3 mb-4 p-5" method="post" action="/addtitle">
+            <fieldset>
+
+                <!-- Form Name -->
+                <legend>Такая вот форма</legend>
+
+                <!-- Text input-->
+                <div class="form-group">
+                    <label class="col-md-4 control-label" for="txtTitle">Название</label>
+                    <div class="col-md-4">
+                        <input id="txtTitle" name="inputTitle" type="text" placeholder="placeholder" class="form-control input-md">
+                    </div>
+                </div>
+
+                <!-- Textarea -->
+                <div class="form-group">
+                    <label class="col-md-4 control-label" for="txtPost">Текст</label>
+                    <div class="col-md-4">
+                        <textarea class="form-control" id="txtPost" name="inputText"></textarea>
+                    </div>
+                </div>
+                
+                <!-- Button -->
+                <div class="form-group">
+                    <label class="col-md-4 control-label" for="singlebutton"></label>
+                    <div class="col-md-4">
+                        <input id="singlebutton" name="singlebutton" class="btn btn-primary" type="submit" value="Публикуем" />
+                    </div>
+                </div>
+
+            </fieldset>
+        </form>
+    </section>
+
+</body>

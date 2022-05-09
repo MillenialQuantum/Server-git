@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+	<title>Страница пользователя Spaces</title>
+
+	<meta name="viewport" content=
+		"width=device-width, initial-scale=1">
+
+    <link
+        href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css"
+        rel="stylesheet"
+        integrity="sha384-1BmE4kWBq78iYhFldvKuhfTAU6auU8tT94WrHftjDbrCEXSU1oBoqyl2QvZ6jIW3"
+        crossorigin="anonymous"
+    />
+	<link rel="stylesheet" href=
+"https://maxcdn.bootstrapcdn.com/bootstrap/3.4.1/css/bootstrap.min.css">
+
+	<script src=
+"https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js">
+	</script>
+
+	<script src=
+"https://maxcdn.bootstrapcdn.com/bootstrap/3.4.1/js/bootstrap.min.js">
+	</script>
+    <script type="text/javascript" src="http://ajax.aspnetcdn.com/ajax/jquery.templates/beta1/jquery.tmpl.js">
+        
+    </script>
+    <script>
+        $(function(){
+            $.ajax({
+                url : '/gettitle',
+                type : 'GET',
+                success: function(res){
+
+                    
+                    var titleObj = JSON.parse(res);
+                    $('#listTemplate').tmpl(titleObj).appendTo('#ulist');
+                    
+                },
+                error: function(error){
+                    console.log(error);
+                }
+            });
+        });
+        function Edit(elem){
+		localStorage.setItem('editId',$(elem).attr('data-id'));
+		$.ajax({
+			url : '/getTitleById',
+			data : {id:$(elem).attr('data-id')},
+			type : 'POST',
+			success: function(res){
+				
+				var data = JSON.parse(res);
+
+				$('#editTitle').val(data[0]['Title']);
+				$('#editText').val(data[0]['Text']);
+				$('#editModal').modal();
+					
+			},
+			error: function(error){
+				console.log(error);
+			}
+		});
+	    }
+
+        function DELETE() {
+            $.ajax({
+                url: '/updateTitle',
+                data: {
+                    title: $('#editTitle').val(),
+                    text: $('#editText').val(),
+                    id: localStorage.getItem('editId')
+                },
+                type: 'POST',
+                success: function(res) {
+                    $('#editModal').modal('hide');
+                    // Re populate the grid
+                    GetTitles();
+                },
+                error: function(error) {
+                    console.log(error);
+                }
+            })
+        };
+        function GetTitles() {
+            $.ajax({
+                url: '/gettitle',
+                type: 'GET',
+                success: function(res) {
+                    var titleObj = JSON.parse(res);
+                    $('#ulist').empty();
+                    $('#listTemplate').tmpl(titleObj).appendTo('#ulist');
+                },
+                error: function(error) {
+                    console.log(error);
+                }
+            });
+        }
+        function ConfirmDelete(elem) {
+            localStorage.setItem('deleteId', $(elem).attr('data-id'));
+            $('#deleteModal').modal();
+        }
+        function Delete() {
+            $.ajax({
+                url: '/deleteTitle',
+                data: {
+                    id: localStorage.getItem('deleteId')
+                },
+                type: 'POST',
+                success: function(res) {
+                    var result = JSON.parse(res);
+                    if (result.status == 'OK') {
+                        $('#deleteModal').modal('hide');
+                        GetTitles();
+                    } else {
+                        alert(result.status);
+                    }
+                },
+                error: function(error) {
+                    console.log(error);
+                }
+            });
+        }
+
+    </script>
+    <style>
+        .trash {
+            color: rgb(209, 91, 71);
+        }
+        .panel-body .checkbox {
+            display: inline-block;
+            margin: 0px;
+        }
+        .list-group {
+            margin-bottom: 0px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="container">
+                     
+        <div class="header">
+                         
+            <nav
+                class="border-bottom flex-wrap mb-4 py-3 d-flex justify-content-center"
+            >
+                <a
+                    href="/"
+                    class="text-dark text-decoration-none mb-3 mb-md-0 d-flex align-items-center me-md-auto"
+                >
+                    <span class="fs-4">Spaces</span>
+                </a>
+
+                <ul class="nav nav-pills">
+                    <li class="nav-item">
+                        <a href="/google_logout" class="nav-link">Выход</a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="/" class="nav-link active">Домой</a>
+                    </li>
+                    
+                </ul>
+                                         
+            </nav>
+                     
+        </div>
+        <h1>Привет</h1>
+        <div class="bg-light rounded-3 mb-4 p-5">
+            <div class="container-fluid py-5">
+                <h1 class="text-center fw-bold display-5">Где ты был?!</h1>
+                <p class="text-center fw-bold display-5">Мы уже заждались тебя. Хочешь просто почитать
+                    или напишешь новый текст?
+                </p>
+            </div>
+        </div>
+        <div class="bg-light rounded-3 mb-4 p-5">
+            <div class="container-fluid py-5">
+                <h1>Удиви нас<!DOCTYPE html>!</h1>
+                <li class="nav-item">
+                    <a href="/title" class="nav-link active">Что-то вспомнил?</a>
+                </li>
+            </div>
+        </div>
+        <div class="bg-light rounded-3 mb-4 p-5">
+            <div class="container-fluid py-5">
+                <h1>Если устал, просто расслабься и почитай!<!DOCTYPE html>!</h1>
+                <li class="nav-item">
+                    <a href="/posts" class="nav-link active">Томные истории</a>
+                </li>
+            </div>
+        </div>
+
+    <script id="listTemplate" type="text/x-jQuery-tmpl">
+        <li class="list-group-item">
+            <div class="checkbox">
+                <label>
+                    ${Title}
+                </label>
+            </div>
+            <div class="checkbox">
+                <label>
+                    ${Text}
+                </label>
+            </div>
+            <div class="pull-right action-buttons">
+                <a data-id=${Id} onclick="Edit(this)" ><span class="glyphicon glyphicon-pencil"></span></a>
+                <a data-id=${Id} onclick="ConfirmDelete(this)" ><span class="glyphicon glyphicon-trash"></span></a>
+            </div>
+        </li>    
+    </script> 
+
+    <div class="row">
+        <div class="col-md-12">
+            <div class="panel-body">
+                <ul id="ulist" class="list-group">
+                        
+                </ul>
+            </div>
+        </div>
+    </div>
+	
+	<div class="modal fade" id="editModal" tabindex="-1" role="dialog" aria-labelledby="editModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <button type="button" class="close" data-dismiss="modal"><span aria-hidden="true">&times;</span><span class="sr-only">Закрыть</span>
+                    </button>
+                    <h4 class="modal-title" id="editModalLabel">Редакция</h4>
+                </div>
+                <div class="modal-body">
+                    <form role="form">
+                        <div class="form-group">
+                            <label for="recipient-name" class="control-label">Название:</label>
+                            <input type="text" class="form-control" id="editTitle">
+                        </div>
+                        <div class="form-group">
+                            <label for="message-text" class="control-label">Текст:</label>
+                            <textarea class="form-control" id="editText"></textarea>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-default" data-dismiss="modal">Закрыть</button>
+                    <button type="button" id="btnUpdate" class="btn btn-primary" onclick="DELETE()">Обновить</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="deleteModal" tabindex="-1" role="dialog" aria-labelledby="deleteModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+          <div class="modal-content">
+            <div class="modal-header" style="text-align:center;">
+              <h4 class="modal-title" style="color:red;" id="deleteModalLabel">Удаление навсегда!</h4>
+            </div>
+           
+            <div class="modal-footer">
+              <button type="button" class="btn btn-default" data-dismiss="modal">Отмена</button>
+              <button type="button" class="btn btn-primary" onclick="Delete()">Удалить</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    <footer class="footer">
+                             
+        <p>&copy; Spaces 2022</p>
+                 
+    </footer>  
+</body>
+
+</html>
