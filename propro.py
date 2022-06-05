@@ -1,19 +1,19 @@
 from crypt import methods
 from unicodedata import name
-from flask import Flask, render_template, request, json, session, make_response
-from flask import redirect, url_for, flash, send_from_directory, abort
+from flask import Flask, render_template, request, json, session, Response
+import time
+from flask import redirect, url_for, flash, abort
 from flaskext.mysql import MySQL
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
-import uuid, os, pathlib, requests
+import os, pathlib, requests, datetime
 from google.oauth2 import id_token
 from google_auth_oauthlib.flow import Flow
 from pip._vendor import cachecontrol
 import google.auth.transport.requests as req
 from authlib.integrations.flask_client import OAuth
-from flask_dance.contrib.github import make_github_blueprint, github
 from flask_dance.contrib.facebook import make_facebook_blueprint, facebook
-
+import pymongo
 
 app143 = Flask(__name__)
 app143.secret_key = 'teodortoreadorflaskspacesapp'
@@ -27,9 +27,13 @@ app143.config['MYSQL_DATABASE_HOST'] = 'localhost'
 mysql.init_app(app143)
 
 
+#Mongodb configurations
+client = pymongo.MongoClient('mongodb://127.0.0.1:27017')
+db = client.auth
+coll = db.users
 
 
-#Маршруты сайта
+# Регистрация, кабинеты и прочее
 @app143.route("/")
 def index():
     return render_template('index.html')
@@ -43,35 +47,35 @@ def signup():
 @app143.route('/signup2',methods=['POST'])
 def signUp():
     try:
-        # read the posted values from the UI
-        _name = request.form['inputName']
-        _email = request.form['inputEmail']
-        _password = request.form['inputPassword']
- 
-        # validate the received values
-        # if _name and _email and _password:
-            # return json.dumps({'html':'<span>All fields good !!</span>'})
-        # else:
-            # return json.dumps({'html':'<span>Enter the required fields</span>'})
-            
+        new = {
+            "_first_name" : request.form['inputFirst_name'],
+            "_last_name" : request.form['inputLast_name'],
+            "_email" : request.form['inputEmail'],
+            "_password" : generate_password_hash(request.form['inputPassword']),
+            "_created" : str(time.time()).split('.')[0],
+            "_location" : request.form['inputLocation']
+        }
+     
         conn = mysql.connect()
         cursor = conn.cursor()
-        _hashed_password = generate_password_hash(_password)
-        cursor.callproc('sp_createUser',(_name,_email,_hashed_password))
+        cursor.callproc('sp_createUser',(new["_first_name"], new["_last_name"], new["_email"], new["_password"], new["_created"], new["_location"]))
         data = cursor.fetchall()
 
         if len(data) == 0:
             conn.commit()
+            _object = "user"
+            _object_name = new["_email"]
+            _event = "added"
+            _time = str(time.time()).split('.')[0]
+            cursor.callproc('sp_add_event',(_object, _object_name, _event, _time))
+            event = cursor.fetchall()
+            conn.commit()
             return redirect('/userHome')
-            #Не знаю, что это
-            #return json.dumps({'message':'User created successfully !'})
         else:
             return json.dumps({'error':str(data[0])})
     
     except Exception as e:
         return json.dumps({'error':str(e)})
-        #А что это, тоже не знаю
-        #return traceback.format_exc()
     finally:
         cursor.close()
         conn.close()
@@ -79,11 +83,7 @@ def signUp():
 
 @app143.route('/signin')
 def showSignin():
-    if session.get('user'):
-        return redirect('/userHome')
-    elif session.get('name'):
-        return redirect('/userHome')
-    if session.get('github'):
+    if session.get('user') or session.get('google') or session.get('github') or session.get('facebook'):
         return redirect('/userHome')
     else:
         return render_template('signin.html')
@@ -96,36 +96,119 @@ def validateLogin():
         _password = request.form['inputPassword']
 	
 	    # connect to mysql
-        con = mysql.connect()
-        cursor = con.cursor()
+        conn = mysql.connect()
+        cursor = conn.cursor()
         cursor.callproc('sp_validateLogin',(_username,))
         data = cursor.fetchall()
  
         if len(data) > 0:
-            if check_password_hash(str(data[0][3]), _password):
+            if check_password_hash(str(data[0][4]), _password):
                 session['user'] = data[0][0]
+                _object = "user"
+                _object_name = data[0][3]
+                _event = "logged in"
+                _time = str(time.time()).split('.')[0]
+                cursor.callproc('sp_add_event',(_object, _object_name, _event, _time))
+                event = cursor.fetchall()
+                conn.commit()
                 return redirect('/userHome')
             else:
                 return render_template('error.html',error = 'Неверный логин или пароль')
         else:
-            return render_template('error.html',error = 'Неверный логин или пароль')
+            return render_template('error.html',error = 'Пользователя не существует')
   
     except Exception as e:
         return render_template('error.html',error = str(e))
 
+    finally:
+        cursor.close()
+        conn.close()
+
 
 @app143.route('/userHome')
 def userHome():
-    if session.get('github'):
-        return render_template('check3.html')
-    elif session.get('user'):
-        return render_template('check.html')
-    elif session.get('name'):
+    if session.get('github') or session.get('facebook') or session.get('google'):
         return render_template('check2.html')
+    elif session.get('user'):
+        conn = mysql.connect()
+        cursor = conn.cursor()
+        _user = str(session['user'])
+        cursor.callproc('sp_get_info',(_user,))
+        data = cursor.fetchall()
+        new = {
+            "_first_name" : data[0][1] or None,
+            "_last_name" : data[0][2] or None,
+            "_email" : data[0][3] or None,
+            "_password" : data[0][4] or None,
+            "_google" : data[0][5] or None,
+            "_github" : data[0][10] or None,
+            "_avatar" : data[0][4] or None,
+        }
+        name = data[0][1] + ' ' + data[0][2]
+        if data[0][7]:
+            filename = '/uploads/' + data[0][7]
+            return render_template('check.html', name=name, filename=filename, google=new['_google'], github=new['_github'])
+        else:
+            return render_template('check.html', name=name, google=new['_google'], github=new['_github'])
     else:
         return render_template('error.html',error = 'Вы вне аккаунта')
 
 
+@app143.route('/profile_image')
+def profile_image():
+    return render_template('profileimage.html')
+
+@app143.route('/profile_image', methods=['POST'])
+def upload2():
+    if 'file' not in request.files:
+        flash('No file part')
+        return redirect(request.url)
+    file = request.files['file']
+    if file.filename == '':
+        flash('No image selected for uploading')
+        return redirect(request.url)
+
+    if file and allowed_file(file.filename):
+        filename = secure_filename(file.filename)
+        file.save(os.path.join(basedir, app143.config['UPLOAD_FOLDER'], filename))
+        conn = mysql.connect()
+        cursor = conn.cursor()
+        _file = filename
+        _user = str(session['user'])
+        cursor.callproc('sp_add_avatar',(_user, _file))
+        cursor.fetchall()
+        conn.commit()
+        return redirect('/userHome')
+    else:
+        flash('Allowed image types are - pdf, png, jpg, jpeg, gif')
+        return redirect(request.url)
+
+@app143.route('/logout')
+def logout():
+    if session.get('user'):
+        conn = mysql.connect()
+        cursor = conn.cursor()
+        _user = str(session['user'])
+        cursor.callproc('sp_get_info',(_user,))
+        data = cursor.fetchall()
+        _object = "user"
+        _object_name = data[0][3]
+        _event = "logged out"
+        _time = str(time.time()).split('.')[0]
+        cursor.callproc('sp_add_event',(_object, _object_name, _event, _time))
+        event = cursor.fetchall()
+        conn.commit()
+        cursor.close()
+        conn.close()
+        session.clear()
+        return redirect('/')
+    else:
+        return redirect('/')
+
+
+
+
+# Все, что касается написания текстов
 @app143.route('/title')
 def newtitle():
     return render_template('title.html')
@@ -139,38 +222,27 @@ def addtitle():
             _title = request.form['inputTitle']
             _text = request.form['inputText']
             _user = session.get('user')
+            _created = str(time.time()).split('.')[0]
  
             conn = mysql.connect()
             cursor = conn.cursor()
-            cursor.callproc('sp_addtitle',(_title,_text,_user))
+            cursor.callproc('sp_add_title',(_title,_text,_user,_created))
             data = cursor.fetchall()
  
             if len(data) == 0:
+                conn.commit()
+                _object = "title"
+                _object_name = _title
+                _event = "added"
+                _time = str(time.time()).split('.')[0]
+                cursor.callproc('sp_add_event',(_object, _object_name, _event, _time))
+                event = cursor.fetchall()
                 conn.commit()
                 return redirect('/upload')
             else:
                 return render_template('error.html',error = 'Мало текста для поста')
-
-        # Google login         
-        elif session.get('name'):
-            _title = request.form['inputTitle']
-            _text = request.form['inputText']
-            _user = session.get('name')
- 
-            conn = mysql.connect()
-            cursor = conn.cursor()
-            cursor.callproc('sp_addtitle',(_title,_text,_user))
-            data = cursor.fetchall()
- 
-            if len(data) == 0:
-                conn.commit()
-                return redirect('/userHome')
-            else:
-                return render_template('error.html',error = 'Мало текста для поста')
-        else:
-            return render_template('error.html',error = 'Вы вне аккаунта')
     except Exception as e:
-        return render_template('error.html',error = str(e))
+        return str(e)
     finally:
         cursor.close()
         conn.close()
@@ -181,13 +253,10 @@ def gettitle():
     try:
         if session.get('user'):
             _user = session.get('user')
-            _limit = 2
-            _total_records = 0
-
 
             con = mysql.connect()
             cursor = con.cursor()
-            cursor.callproc('sp_GetTitleByUser',(_user,))
+            cursor.callproc('sp_GetTitleByUser',(_user))
             titles = cursor.fetchall()
  
             titles_dict = []
@@ -195,7 +264,10 @@ def gettitle():
                 wish_dict = {
                         'Id': title[0],
                         'Title': title[1],
-                        'Text': title[2]}
+                        'Text': title[2],
+                        'Author': title[3],
+                        'Image': title[4],
+                        'Created': datetime.datetime.fromtimestamp(int(title[5])) or "null"}
                 titles_dict.append(wish_dict)
  
             return json.dumps(titles_dict)
@@ -205,7 +277,7 @@ def gettitle():
         return render_template('error.html', error = str(e))
 
 
-@app143.route('/gettitles')
+@app143.route('/posts')
 def gettitles():
     try:
         con = mysql.connect()
@@ -218,12 +290,49 @@ def gettitles():
             wish_dict = {
                     'Id': title[0],
                     'Title': title[1],
-                    'Text': title[2]}
+                    'Text': title[2],
+                    'Author': title[3],
+                    'Image': title[4],
+                    'Created': datetime.datetime.fromtimestamp(int(title[5])) or "null"}
             titles_dict.append(wish_dict)
- 
-        return json.dumps(titles_dict)
+    
+        return render_template('new.html', posts=titles_dict)
     except Exception as e:
         return render_template('error.html', error = str(e))
+    finally:
+        cursor.close()
+        con.close()
+
+
+@app143.route('/post/<id>')
+def show_post(id):
+    try:
+        _id = id
+        con = mysql.connect()
+        cursor = con.cursor()
+        cursor.callproc('sp_GetTitle',(_id,))
+        title = cursor.fetchall()
+        yo = {
+                'Id': title[0][0],
+                'Title': title[0][1],
+                'Text': title[0][2],
+                'Author': title[0][3],
+                'Created': datetime.datetime.fromtimestamp(int(title[0][5])) or "null"}
+        _user = str(yo['Author'])
+        cursor.callproc('sp_get_info',(_user,))
+        data = cursor.fetchall()
+        name = data[0][1] + ' ' + data[0][2]
+        if title[0][4]:
+            yo['Image'] = '/uploads/' + title[0][4]
+            return render_template('read_title.html', post=yo, filename=yo['Image'], name=name)
+        else:
+            return render_template('read_title.html', post=yo, name=name)
+
+    except Exception as e:
+        return render_template('error.html', error = str(e))
+    finally:
+        cursor.close()
+        con.close()
 
 
 @app143.route('/getTitleById',methods=['POST'])
@@ -301,15 +410,8 @@ def deleteTitle():
         cursor.close()
         conn.close()
 
-@app143.route('/logout')
-def logout():
-    session.pop('user', None)
-    return redirect('/')
 
 
-@app143.route('/posts')
-def posts():
-    return render_template('read.html')
 
 
 
@@ -318,7 +420,7 @@ def posts():
 
 app143.config['UPLOAD_FOLDER'] = 'static/uploads'
 ALLOWED_EXTENSIONS = {'pdf', 'png', 'jpg', 'jpeg', 'gif'}
-app143.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
+app143.config['MAX_CONTENT_LENGTH'] = 32 * 2048 * 2048
 basedir = os.path.abspath(os.path.dirname(__file__))
 
 def allowed_file(filename):
@@ -344,15 +446,25 @@ def upload_image():
     if file.filename == '':
         flash('No image selected for uploading')
         return redirect(request.url)
-    if file and allowed_file(file.filename):
-        filename = secure_filename(file.filename)
-        file.save(os.path.join(basedir, app143.config['UPLOAD_FOLDER'], filename))
-        #print('upload_image filename: ' + filename)
-        flash('Image successfully uploaded and displayed below')
-        return render_template('upload.html', filename=filename)
-    else:
-        flash('Allowed image types are - pdf, png, jpg, jpeg, gif')
-        return redirect(request.url)
+    try:
+        if file and allowed_file(file.filename):
+            filename = secure_filename(file.filename)
+            file.save(os.path.join(basedir, app143.config['UPLOAD_FOLDER'], filename))
+            conn = mysql.connect()
+            cursor = conn.cursor()
+            _image = filename
+            cursor.callproc('sp_addImage',(_image,))
+            cursor.fetchall()
+            conn.commit()
+            return redirect('/userHome')
+        else:
+            flash('Allowed image types are - pdf, png, jpg, jpeg, gif')
+            return redirect(request.url)
+    except Exception as e:
+        return json.dumps({'status':str(e)})
+    finally:
+        cursor.close()
+        conn.close()
 
 
 @app143.route('/display/<filename>')
@@ -409,20 +521,96 @@ def callback():
         request=token_request,
         audience=GOOGLE_CLIENT_ID
     )
-
+    
     session["google_id"] = id_info.get("sub")  #defing the results to show on the page
-    session["name"] = id_info.get("name")
-    return redirect("/protected_area")
+    session["google"] = id_info.get("name")
+    
+    try:
+        new = {
+            "_nickname" : id_info.get("given_name") + " " + id_info.get("family_name") or "null",
+            "_first_name" : session["google"].split()[0],
+            "_last_name" : session["google"].split()[1].title(),
+            "_created" : str(time.time()).split('.')[0],
+            "_location" : id_info.get("location") or "null",
+            "_status" : "active",
+            "_birthday" : id_info.get("birthday") or "null",
+            "_auth_provider" : "google",
+            "_auth_provider_user_id" : session["google_id"],
+            "_email" : id_info.get("email"),
+            "_gender" : id_info.get("gender") or "null",
+            "_avatar" : id_info.get("picture") or "null"
+        }
 
+        conn = mysql.connect()
+        cursor = conn.cursor()
+        cursor.callproc('sp_add_auth_provider',
+            (new["_nickname"], new["_first_name"], 
+            new["_last_name"], new["_created"], 
+            new["_location"], new["_status"], 
+            new["_birthday"], new["_auth_provider"], 
+            new["_auth_provider_user_id"], new["_email"], 
+            new["_gender"], new["_avatar"])
+        )  
+        data = cursor.fetchall()
 
+        if len(data) == 0:
+            conn.commit()
+            _object = "google_user"
+            _object_name = new["_auth_provider_user_id"]
+            _event = "added"
+            _time = str(time.time()).split('.')[0]
+            cursor.callproc('sp_add_event',(_object, _object_name, _event, _time))
+            event = cursor.fetchall()
+            conn.commit()
+            _object = "google_user"
+            _object_name = new["_auth_provider_user_id"]
+            _event = "logged in"
+            _time = str(time.time()).split('.')[0]
+            cursor.callproc('sp_add_event',(_object, _object_name, _event, _time))
+            event = cursor.fetchall()
+            conn.commit()
+            return redirect('/userHome')
+        else:
+            _object = "google_user"
+            _object_name = new["_auth_provider_user_id"]
+            _event = "logged in"
+            _time = str(time.time()).split('.')[0]
+            cursor.callproc('sp_add_event',(_object, _object_name, _event, _time))
+            event = cursor.fetchall()
+            conn.commit()
+            return redirect('/userHome') 
+    
+    except Exception as e:
+        return json.dumps({'error':str(e)})
+    finally:
+        cursor.close()
+        conn.close()
+    
+
+    
 @app143.route("/protected_area")  #the page where only the authorized users can go to
 @login_is_required
 def protected_area():
-    return render_template("check2.html")
+    return render_template('check2.html')
 
 
-@app143.route("/google_logout")  #the logout page and function
+@app143.route("/social_logout")  #the logout page and function
 def google_logout():
+    conn = mysql.connect()
+    cursor = conn.cursor()
+    if session.get('google'):
+        _user = session['google_id']
+    elif session.get('github'):
+        _user = session['github_id']
+    cursor.callproc('sp_social_info',(_user,))
+    data = cursor.fetchall()
+    _object = "google_user"
+    _object_name = data[0][10]
+    _event = "logged out"
+    _time = str(time.time()).split('.')[0]
+    cursor.callproc('sp_add_event',(_object, _object_name, _event, _time))
+    event = cursor.fetchall()
+    conn.commit()
     session.clear()
     return redirect("/")
 
@@ -437,7 +625,7 @@ app143.config['GITHUB_CLIENT_ID'] = "190d9903df1402441a93"
 app143.config['GITHUB_CLIENT_SECRET'] = "fae13a0ed7b17ff7f926ec68cfe3892b6f7d132b"
 
 github = oauth.register (
-  name = 'github',
+    name = 'github',
     client_id = app143.config["GITHUB_CLIENT_ID"],
     client_secret = app143.config["GITHUB_CLIENT_SECRET"],
     access_token_url = 'https://github.com/login/oauth/access_token',
@@ -461,18 +649,80 @@ def github_authorize():
     github = oauth.create_client('github')
     token = github.authorize_access_token()
     session['github'] = github.get('user').json()
-    return render_template('check3.html')
+    session['github_id'] = session['github']["id"]
 
+    try:
+        new = {
+            "_nickname" : session['github']["login"] or "null",
+            "_first_name" : session['github'].get("name") or "null",
+            "_last_name" : session['github'].get("name") or "null",
+            "_created" : str(time.time()).split('.')[0],
+            "_location" : session['github']["location"] or "null",
+            "_status" : "active",
+            "_birthday" : session['github'].get("birthday") or "null",
+            "_auth_provider" : "github",
+            "_auth_provider_user_id" : str(session['github']["id"]),
+            "_email" : session['github'].get("email") or "null",
+            "_gender" : session['github'].get("gender") or "null",
+            "_avatar" : session['github'].get("avatar_url") or "null"
+        }
 
-@app143.route('/github_logout')
-def github_logout():
-    session.clear()
-    return redirect("/")
+        conn = mysql.connect()
+        cursor = conn.cursor()
+        cursor.callproc('sp_add_auth_provider',
+            (new["_nickname"], new["_first_name"], 
+            new["_last_name"], new["_created"], 
+            new["_location"], new["_status"], 
+            new["_birthday"], new["_auth_provider"], 
+            new["_auth_provider_user_id"], new["_email"], 
+            new["_gender"], new["_avatar"])
+        )  
+        data = cursor.fetchall()
+
+        if len(data) == 0:
+            conn.commit()
+            _object = "github_user"
+            _object_name = new["_auth_provider_user_id"]
+            _event = "added"
+            _time = str(time.time()).split('.')[0]
+            cursor.callproc('sp_add_event',(_object, _object_name, _event, _time))
+            event = cursor.fetchall()
+            conn.commit()
+            _object = "github_user"
+            _object_name = new["_auth_provider_user_id"]
+            _event = "logged in"
+            _time = str(time.time()).split('.')[0]
+            cursor.callproc('sp_add_event',(_object, _object_name, _event, _time))
+            event = cursor.fetchall()
+            conn.commit()
+            return redirect('/userHome')
+        else:
+            _object = "github_user"
+            _object_name = new["_auth_provider_user_id"]
+            _event = "logged in"
+            _time = str(time.time()).split('.')[0]
+            cursor.callproc('sp_add_event',(_object, _object_name, _event, _time))
+            event = cursor.fetchall()
+            conn.commit()
+            return redirect('/userHome')
+    
+    except Exception as e:
+        return json.dumps({'error':str(e)})
+    finally:
+        cursor.close()
+        conn.close()
+
+# На всякий случай(выход осуществляется через маршрут social_logout)
+#@app143.route('/github_logout')
+#def github_logout():
+    #session.clear()
+    #return redirect("/")
 
 
 
 
 # Facebook login
+
 
 app143.config["FACEBOOK_OAUTH_CLIENT_ID"] = '563843535081424'
 app143.config["FACEBOOK_OAUTH_CLIENT_SECRET"] = '036cb4b29f9a8ab38637befb640c3bb0'
@@ -481,26 +731,20 @@ app143.config["FACEBOOK_OAUTH_CLIENT_SECRET"] = '036cb4b29f9a8ab38637befb640c3bb
 facebook_blueprint = make_facebook_blueprint(client_id=app143.config["FACEBOOK_OAUTH_CLIENT_ID"],
                                             client_secret=app143.config["FACEBOOK_OAUTH_CLIENT_SECRET"])                                   
 
-app143.register_blueprint(facebook_blueprint, url_prefix="")
+app143.register_blueprint(facebook_blueprint, url_prefix="/login")
 
 
 @app143.route('/facebook_login')
 def facebook_login():
-    if not facebook.authorized:
-        return redirect(url_for("facebook.login"))
+    return redirect(url_for("facebook.login"))
 
 
-@app143.route('/facebook_authorized')
+@app143.route('/login/facebook/authorized')
 def facebook_authorized():
-    account_info = facebook.get('/user')
-
-    if account_info:
-        account_info_json = account_info.json()
-        session['facebook'] = account_info_json['login']
-        print(session['facebook'])
-        return render_template('check2.html')
-
-    return '<h1>Request failed!</h1>'
+    account_info = facebook.get('/user').json()
+    session['facebook'] = account_info['login']
+    
+    return account_info
 
 
 @app143.route('/facebook_logout')
@@ -509,7 +753,11 @@ def facebook_logout():
     return redirect('/')
 
 
-
+# Для проверки
+@app143.route('/banger')
+def banger():
+    data = db.users.find()
+    return data
 
 #Приложение работает
 
