@@ -32,11 +32,8 @@
                 url : '/gettitles',
                 type : 'GET',
                 success: function(res){
-
-                    
                     var titleObj = JSON.parse(res);
                     $('#listTemplate').tmpl(titleObj).appendTo('#ulist');
-                    
                 },
                 error: function(error){
                     console.log(error);
